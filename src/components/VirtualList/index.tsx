@@ -1,24 +1,61 @@
-import React from 'react';
-import { useSelector } from 'react-redux';
-import { FixedSizeList as List } from 'react-window';
-import InfiniteLoader from 'react-window-infinite-loader';
-import { getBooks } from '../../mock';
-import { bookSelector } from '../../store/selector';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { FixedSizeList as List, ListOnScrollProps } from "react-window";
+import InfiniteLoader from "react-window-infinite-loader";
+import { getBooks } from "../../mock";
+import {
+  cancelPollingBooksAction,
+  getBooksAction,
+  startPollingBooksAction,
+  updateCachedScrollOffset,
+  updateState,
+} from "../../store/action";
+import { bookSelector, rootSelector } from "../../store/selector";
+import BookCard from "../BookCard";
 export interface IVirtualList {}
 
-const PREFIX = 'VirtualList';
-const Item = ({ index, style }: { index: number; style: any }) => {
+const PREFIX = "VirtualList";
+const Item = (props: any) => {
+  const { index, style, data } = props;
   let content;
-  return <div style={style}>{content}</div>;
+  return <BookCard style={style} book={data[index]} />;
 };
 const VirtualList: React.FC<IVirtualList> = (props) => {
+  const dispatch = useDispatch();
   const books = useSelector(bookSelector);
-  console.info(books);
+  const { scrollOffset, cachedBooks } = useSelector(rootSelector);
+  const handleVirtualListScroll = useCallback(
+    (scrollInfo: ListOnScrollProps) => {
+      console.info(scrollInfo);
+      if (scrollInfo.scrollOffset < 600 && cachedBooks.length > 0) {
+        dispatch(
+          updateState({
+            books: [...cachedBooks, ...books],
+            scrollOffset: 0,
+            cachedBooks: [],
+          })
+        );
+      } else {
+        dispatch(updateCachedScrollOffset(scrollInfo.scrollOffset));
+      }
+    },
+    [dispatch, cachedBooks]
+  );
+  const listRef = useRef<List>(null);
+  useEffect(() => {
+    dispatch(startPollingBooksAction());
+    return () => {
+      dispatch(cancelPollingBooksAction());
+    };
+  }, []);
+  useLayoutEffect(() => {
+    listRef.current?.scrollTo(scrollOffset);
+  }, [scrollOffset]);
   return (
     <div className={PREFIX}>
       <InfiniteLoader
         isItemLoaded={(index: number) => false}
-        itemCount={1000}
+        itemCount={books.length}
         loadMoreItems={(startIndex: number, stopIndex: number) => {
           return Promise.resolve(getBooks());
         }}
@@ -26,13 +63,16 @@ const VirtualList: React.FC<IVirtualList> = (props) => {
         {({ onItemsRendered, ref }) => (
           <List
             className="List"
-            height={150}
-            itemCount={1000}
-            itemSize={30}
+            layout="vertical"
+            height={900}
+            itemCount={books.length}
+            itemSize={276}
             onItemsRendered={onItemsRendered}
-            ref={ref}
+            ref={listRef}
             itemData={books}
+            onScroll={handleVirtualListScroll}
             width={300}
+            itemKey={(index: number) => books[index]?.id || index}
           >
             {Item}
           </List>
